@@ -293,7 +293,6 @@ class BackupJob:
         # the \r makes it nicely formatted in the database
         return """
 DECLARE @name VARCHAR(50);\r
-DECLARE @path VARCHAR(256);\r
 DECLARE @fileName VARCHAR(256);\r
 DECLARE @fileDate VARCHAR(20);\r
 SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
