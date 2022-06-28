@@ -298,9 +298,9 @@ DECLARE @fileName VARCHAR(256);\r
 DECLARE @fileDate VARCHAR(20);\r
 SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
 DECLARE db_cursor CURSOR READ_ONLY FOR\r
-    SELECT name FROM master.sys.databases WHERE {1};\r
-    AND state = 0 -- database is online
-    AND is_in_standby = 0 -- database is not read only for log shipping
+    SELECT name FROM master.sys.databases WHERE {1}\r
+    AND state = 0 -- database is online\r
+    AND is_in_standby = 0 -- database is not read only for log shipping;\r
 OPEN db_cursor;\r
 FETCH NEXT FROM db_cursor INTO @name;\r
 WHILE @@FETCH_STATUS = 0\r
