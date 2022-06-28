@@ -4,7 +4,7 @@
 #
 #
 
-find "{{ mssql_backup_path }}" -maxdepth 1 -type d -user mssql | while read dir; do
+find "{{ mssql_backup_path }}" -mindepth 1 -maxdepth 1 -type d -user mssql | while read dir; do
     cd "$dir"
     ls -1t | tail -n +{{ mssql_backup_count }} | xargs rm -f
     cd ..
