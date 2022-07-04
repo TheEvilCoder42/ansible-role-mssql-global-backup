@@ -18,20 +18,3 @@
     login_port: "{{ mssql_port | string }}"
     login_name: "{{ mssql_admin_user }}"
     login_password: "{{ mssql_admin_password }}"
-
-- name: SETUP | cron shell script
-  file:
-    path: "{{ mssql_home }}/rotate-backups.sh"
-    state: absent
-
-- name: SETUP | cron job
-  cron:
-    name: "Clean up SQL Server backups"
-    minute: "{{ mssql_backup_cron_minute | default(omit) }}"
-    hour: "{{ mssql_backup_cron_hour | default(omit) }}"
-    day: "{{ mssql_backup_cron_day | default(omit) }}"
-    month: "{{ mssql_backup_cron_month | default(omit) }}"
-    weekday: "{{ mssql_backup_ron_weekday | default(omit) }}"
-    user: "{{ mssql_user }}"
-    job: "{{ mssql_home }}/rotate-backups.sh"
-    state: absent
