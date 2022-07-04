@@ -80,6 +80,20 @@ options:
             - Use I(HHMMSS) format, include any leading I(0) to padd it out I(003000) for 12:30 am
         required: false
         default: "000000"
+    schedule_subday_type:
+        description:
+            - Type of subday schedule to use
+        required: false
+        type: str
+        default: specific
+        choices: [ specific, seconds, minutes, hours ]
+    schedule_subday_interval:
+        description:
+            - Interval of subday type
+            - Should be longer than 10 seconds
+        required: false
+        type: str
+        default: "0"
     include:
         description:
             - List of databases to include
@@ -382,12 +396,14 @@ GO
         os.unlink(path.name)
 
 
-    def schedule_exists(self, type, interval, start_time):
-        sql = "SELECT enabled,freq_type,freq_interval,active_start_time FROM dbo.sysschedules WHERE name='%s'" % self.schedule_name
+    def schedule_exists(self, type, interval, subday_type, subday_interval, start_time):
+        sql = "SELECT enabled,freq_type,freq_interval,freq_subday_type,freq_subday_interval,active_start_time FROM dbo.sysschedules WHERE name='%s'" % self.schedule_name
         results = self.result_filter(sql)
         if len(results) > 0:
             if type is '1':
                 interval = '0';
+            if subday_type is '1':
+                subday_interval = '0';
             if start_time is '000000':
                 start_time = '0'
             else:
@@ -395,10 +411,10 @@ GO
 
             self.schedule_results = results
 
-            return ','.join(['1',type,'%d'%interval,start_time]) in results
+            return ','.join(['1',type,'%d'%interval,'%d'%subday_type,subday_interval,start_time]) in results
         return False
 
-    def schedule_manage(self, type, interval, start_time):
+    def schedule_manage(self, type, interval, subday_type, subday_interval, start_time):
         sql = """
             IF NOT EXISTS (
                 SELECT * FROM dbo.sysschedules WHERE name={0}
@@ -409,7 +425,9 @@ GO
                         @enabled = 1, 
                         @freq_type = {1},
                         @freq_interval = {2},
-                        @active_start_time = N'{3}'
+                        @freq_subday_type = {3},
+                        @freq_subday_interval = {4},
+                        @active_start_time = N'{5}'
                 END
             ELSE
                 BEGIN
@@ -418,18 +436,22 @@ GO
                         @enabled = 1, 
                         @freq_type = {1},
                         @freq_interval = {2},
-                        @active_start_time = N'{3}'                    
+                        @freq_subday_type = {3},
+                        @freq_subday_interval = {4},
+                        @active_start_time = N'{5}'                    
                 END
             ;
         """.format(
             quoteName(self.schedule_name, "'"),
             type,
             interval,
+            subday_type,
+            subday_interval,
             start_time
         )
         sqlcmd(self.server, self.port, self.user, self.password, sql)
 
-        return self.schedule_exists(type, interval, start_time)
+        return self.schedule_exists(type, interval, subday_type, subday_interval, start_time)
 
 
     def schedule_attached(self):
@@ -468,6 +490,13 @@ def main():
         'idle' : '128'
     }
 
+    schedule_subday_types = {
+        'specific' : '1',
+        'seconds' : '2',
+        'minutes' : '4',
+        'hours' : '8'
+    }
+
     module = AnsibleModule(
         argument_spec = dict(
             name = dict(required = True),
@@ -485,9 +514,11 @@ def main():
             exclude = dict(type='list', default = []),
 
             # schedule
-            schedule_type       = dict(default = 'daily', choices=schedule_types.keys()),
-            schedule_interval   = dict(type='int', default = 1),
-            schedule_start_time = dict(default = '000000'),
+            schedule_type            = dict(default = 'daily', choices=schedule_types.keys()),
+            schedule_interval        = dict(type='int', default = 1),
+            schedule_start_time      = dict(default = '000000'),
+            schedule_subday_type     = dict(default = 'specific', choices=schedule_subday_types.keys()),
+            schedule_subday_interval = dict(type='int', default = 0),
 
             # login properties
             login_server   = dict(required = False, default = 'localhost'),
@@ -542,8 +573,10 @@ def main():
         schedule_type = module.params['schedule_type']
         schedule_interval = module.params['schedule_interval']
         schedule_start_time = module.params['schedule_start_time']
-        if not backup.schedule_exists(schedule_types[schedule_type], schedule_interval, schedule_start_time):
-            if backup.schedule_manage(schedule_types[schedule_type], schedule_interval, schedule_start_time):
+        schedule_subday_type = module.params['schedule_subday_type']
+        schedule_subday_interval = module.params['schedule_subday_interval']
+        if not backup.schedule_exists(schedule_types[schedule_type], schedule_interval, schedule_subday_types[schedule_subday_type], schedule_subday_interval, schedule_start_time):
+            if backup.schedule_manage(schedule_types[schedule_type], schedule_interval, schedule_subday_types[schedule_subday_type], schedule_subday_interval, schedule_start_time):
                 changed = True
             # else:
             #     module.fail_json(msg="Unable to update schedule")
