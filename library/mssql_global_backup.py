@@ -90,7 +90,8 @@ options:
     schedule_subday_interval:
         description:
             - Interval of subday type
-            - Should be longer than 10 seconds
+            - Ignored when I(schedule_subday_type=specific)
+            - Should be longer than 10 when I(schedule_subday_type=seconds)
         required: false
         type: str
         default: "0"
@@ -253,8 +254,8 @@ class BackupJob:
         self.rotate = rotate
 
         self.job_name = name
-        self.schedule_name = 'ansible schedule'
-        self.backup_step_name = 'ansible backup step'
+        self.schedule_name = 'ansible %s schedule' % self.name.lower()
+        self.backup_step_name = 'ansible %s step' % self.name.lower()
 
     def result_filter(self, sql):
         data = [i.strip() for i in sqlresults(self.server, self.port, self.user, self.password, sql).split("\n") if i]
@@ -401,9 +402,9 @@ GO
         results = self.result_filter(sql)
         if len(results) > 0:
             if type is '1':
-                interval = '0';
+                interval = 0;
             if subday_type is '1':
-                subday_interval = '0';
+                subday_interval = 0;
             if start_time is '000000':
                 start_time = '0'
             else:
@@ -411,7 +412,7 @@ GO
 
             self.schedule_results = results
 
-            return ','.join(['1',type,'%d'%interval,'%d'%subday_type,subday_interval,start_time]) in results
+            return ','.join(['1',type,'%d'%interval,subday_type,'%d'%subday_interval,start_time]) in results
         return False
 
     def schedule_manage(self, type, interval, subday_type, subday_interval, start_time):
@@ -471,13 +472,32 @@ GO
     def schedule_attach(self):
         sqlcmd(self.server, self.port, self.user, self.password,"""
             EXEC sp_attach_schedule @job_name = {0}, @schedule_name = {1};
-            EXEC sp_add_jobserver @job_name = {0}, @server_name=N'(LOCAL)';
         """.format(
             quoteName(self.job_name, "'"),
             quoteName(self.schedule_name, "'")
         ))
 
         return self.schedule_attached()
+
+    def jobserver_added(self):
+        sql = """
+            SELECT * FROM dbo.sysjobservers sjsrv LEFT JOIN dbo.sysjobs sj ON (sj.job_id = sjsrv.job_id)
+            WHERE sj.name={0}
+        """.format(
+            quoteName(self.job_name, "'"),
+        )
+
+        self.attach_results = self.result_filter(sql)
+        return len(self.attach_results) > 0
+
+    def jobserver_add(self):
+        sqlcmd(self.server, self.port, self.user, self.password,"""
+            EXEC sp_add_jobserver @job_name = {0}, @server_name=N'(LOCAL)';
+        """.format(
+            quoteName(self.job_name, "'")
+        ))
+
+        return self.jobserver_exists()
 
 
 def main():
@@ -583,6 +603,13 @@ def main():
 
         if not backup.schedule_attached():
             if backup.schedule_attach():
+                changed = True
+            # else:
+            #     module.fail_json(msg="Unable to attach schedule")
+        
+        # manage the jobserver
+        if not backup.jobserver_added():
+            if backup.jobserver_add():
                 changed = True
             # else:
             #     module.fail_json(msg="Unable to attach schedule")
