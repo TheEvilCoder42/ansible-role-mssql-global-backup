@@ -295,31 +295,30 @@ class BackupJob:
 DECLARE @name VARCHAR(50);\r
 DECLARE @fileName VARCHAR(256);\r
 DECLARE @fileDate VARCHAR(20);\r
-DECLARE @deleteDate DATETIME = DATEADD(wk, -1, GETDATE());\r
+DECLARE @deleteDate DATETIME = DATEADD(day, -{0}, GETDATE());\r
 SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
 DECLARE db_cursor CURSOR READ_ONLY FOR\r
-    SELECT name FROM master.sys.databases WHERE {1}\r
+    SELECT name FROM master.sys.databases WHERE {2}\r
     AND state = 0 -- database is online\r
     AND is_in_standby = 0 -- database is not read only for log shipping;\r
 OPEN db_cursor;\r
 FETCH NEXT FROM db_cursor INTO @name;\r
 WHILE @@FETCH_STATUS = 0\r
 BEGIN\r
-    SET @fileName = {2} + '/' + {3} + '.{4}';\r
-    BACKUP {5} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
+    SET @fileName = {3} + '/' + {4} + '.{5}';\r
+    BACKUP {6} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
-EXEC master.sys.xp_delete_file 0, '{0}', '{4}', @deleteDate, 1;\r
+EXEC master.sys.xp_delete_file 0, '{1}', '{5}', @deleteDate, 1;\r
 CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
         """.format(
+            self.rotate,
             path,
             where % (','.join(databases)),
             file_path,
-            file_name
-            # ' + '.join(file_name)
-            ,
+            file_name,
             backup_type[type]['ext'],
             backup_type[type]['type']
         )
