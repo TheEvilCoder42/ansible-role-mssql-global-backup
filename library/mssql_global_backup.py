@@ -497,7 +497,7 @@ GO
             quoteName(self.job_name, "'")
         ))
 
-        return self.jobserver_exists()
+        return self.jobserver_added()
 
 
 def main():
