@@ -20,12 +20,9 @@
     login_password: "{{ mssql_admin_password }}"
 
 - name: SETUP | cron shell script
-  template:
-    src: rotate-backups.sh.j2
-    dest: "{{ mssql_home }}/rotate-backups.sh"
-    mode: "0755"
-    owner: "{{ mssql_user }}"
-    group: "{{ mssql_group }}"
+  file:
+    path: "{{ mssql_home }}/rotate-backups.sh"
+    state: absent
 
 - name: SETUP | cron job
   cron:
@@ -37,3 +34,4 @@
     weekday: "{{ mssql_backup_ron_weekday | default(omit) }}"
     user: "{{ mssql_user }}"
     job: "{{ mssql_home }}/rotate-backups.sh"
+    state: absent
