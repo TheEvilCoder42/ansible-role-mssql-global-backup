@@ -295,7 +295,7 @@ class BackupJob:
 DECLARE @name VARCHAR(50);\r
 DECLARE @fileName VARCHAR(256);\r
 DECLARE @fileDate VARCHAR(20);\r
-DECLARE @DeleteDate DATETIME = DATEADD(wk, -1, GETDATE());\r
+DECLARE @deleteDate DATETIME = DATEADD(wk, -1, GETDATE());\r
 SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
 DECLARE db_cursor CURSOR READ_ONLY FOR\r
     SELECT name FROM master.sys.databases WHERE {1}\r
@@ -309,7 +309,7 @@ BEGIN\r
     BACKUP {5} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
-EXEC master.sys.xp_delete_file 0, '{0}', '{4}', @DeleteDate, 1;\r
+EXEC master.sys.xp_delete_file 0, '{0}', '{4}', @deleteDate, 1;\r
 CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
