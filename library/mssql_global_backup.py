@@ -309,7 +309,7 @@ BEGIN\r
     BACKUP {5} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
-EXEC master.sys.xp_delete_file 0, {0}, '{4}', @DeleteDate, 1;\r
+EXEC master.sys.xp_delete_file 0, '{0}', '{4}', @DeleteDate, 1;\r
 CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
