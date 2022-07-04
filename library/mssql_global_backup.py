@@ -286,8 +286,8 @@ class BackupJob:
             file_name = "@name + '_' + @fileDate"
 
         backup_type = {
-            'full': {'ext': '.bak', 'type': 'DATABASE'},
-            'logs': {'ext': '.trn', 'type': 'LOG'}
+            'full': {'ext': 'bak', 'type': 'DATABASE'},
+            'logs': {'ext': 'trn', 'type': 'LOG'}
         }
 
         # the \r makes it nicely formatted in the database
@@ -305,11 +305,11 @@ OPEN db_cursor;\r
 FETCH NEXT FROM db_cursor INTO @name;\r
 WHILE @@FETCH_STATUS = 0\r
 BEGIN\r
-    SET @fileName = {2} + '/' + {3} + '{4}';\r
+    SET @fileName = {2} + '/' + {3} + '.{4}';\r
     BACKUP {5} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
-EXEC master.sys.xp_delete_file 0, {0}, '{4[1:]}', @DeleteDate, 1;\r
+EXEC master.sys.xp_delete_file 0, {0}, '{4}', @DeleteDate, 1;\r
 CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
