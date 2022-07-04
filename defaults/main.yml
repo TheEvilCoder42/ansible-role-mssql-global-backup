@@ -11,7 +11,12 @@ mssql_group: mssql
 mssql_backup_path: /var/opt/mssql/backups
 mssql_backup_count: 14
 
-# 12:00 am
 mssql_schedule_type: daily
 mssql_schedule_interval: 1
 mssql_schedule_start_time: '003000'
+
+mssql_logs_schedule_type: daily
+mssql_logs_schedule_interval: 1
+mssql_logs_schedule_subday_type: hours
+mssql_logs_schedule_subday_interval: 1
+mssql_logs_schedule_start_time: '000000'
