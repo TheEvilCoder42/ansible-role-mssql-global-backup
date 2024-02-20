@@ -325,6 +325,7 @@ BEGIN\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
 EXEC master.sys.xp_delete_file 0, '{1}', '{5}', @deleteDate, 1;\r
+EXEC msdb.dbo.sp_delete_backuphistory @oldest_date = @deleteDate;\r
 CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
