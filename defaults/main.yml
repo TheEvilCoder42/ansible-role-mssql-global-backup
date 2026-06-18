@@ -1,5 +1,5 @@
 ---
-mssql_server: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
+mssql_server: "{{ ansible_facts['default_ipv4']['address'] | default(ansible_facts['all_ipv4_addresses'][0]) }}"
 mssql_port: 1433
 mssql_admin_user: sa
 # mssql_admin_password must be provided by the user (no insecure default is shipped)

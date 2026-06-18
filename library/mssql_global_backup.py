@@ -261,6 +261,7 @@ class BackupJob:
         self.cli_args = cli_args
 
         self.step_results = None
+        self.step_desired = None
         self.schedule_results = None
         self.attach_results = None
 
@@ -294,10 +295,10 @@ class BackupJob:
         # includes name IN (includes)
         databases = []
         if len(self.include) > 0:
-            databases = [ quoteName(name, "'") for name in self.include ]
+            databases = [ quoteName(name, "'") for name in sorted(self.include) ]
             where = 'name IN (%s)'
         else:
-            databases = [ quoteName(name, "'") for name in self.exclude ]
+            databases = [ quoteName(name, "'") for name in sorted(self.exclude) ]
             where = 'name NOT IN (%s)'
 
         if len(databases) == 0:
@@ -369,7 +370,10 @@ GO
         )
 
         self.step_results = "\n".join(self.result_filter(sql))
-        return self.backup_step_sql(type, path) in self.step_results
+        # result_filter() strips/joins lines, so compare a likewise-normalised
+        # version of the desired SQL to keep the step idempotent
+        self.step_desired = "\n".join(line.strip() for line in self.backup_step_sql(type, path).split("\n") if line.strip())
+        return self.step_desired in self.step_results
 
     def backup_step_manage(self, type, path):
         self.step_manage(self.job_name, self.backup_step_name, 1, self.backup_step_sql(type, path))
@@ -631,7 +635,7 @@ def main():
                 'before_header': 'job step: %s' % backup.backup_step_name,
                 'after_header': 'job step: %s' % backup.backup_step_name,
                 'before': (backup.step_results or '') + '\n',
-                'after': backup.backup_step_sql(type, path) + '\n',
+                'after': backup.step_desired + '\n',
             })
             if not check_mode:
                 backup.backup_step_manage(type, path)

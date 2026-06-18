@@ -14,7 +14,7 @@ As of SQL Server 2019 on Linux, it is not currently possible to use `xp_cmdshell
 
 Available variables are listed below, along with default values (see `defaults/main.yml`):
 
-    mssql_server: "{{ ansible_default_ipv4.address }}"
+    mssql_server: "{{ ansible_facts['default_ipv4']['address'] }}"
     mssql_port: 1433
 
 The address and port to use when connecting to the mssql server
