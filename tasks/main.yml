@@ -1,6 +1,6 @@
 ---
 - name: SETUP | ensure backup directory exists
-  file:
+  ansible.builtin.file:
     state: directory
     path: "{{ mssql_backup_path }}"
     owner: "{{ mssql_user }}"

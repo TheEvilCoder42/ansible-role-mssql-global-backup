@@ -402,11 +402,11 @@ GO
         sql = "SELECT enabled,freq_type,freq_interval,freq_subday_type,freq_subday_interval,active_start_time FROM dbo.sysschedules WHERE name='%s'" % self.schedule_name
         results = self.result_filter(sql)
         if len(results) > 0:
-            if type is '1':
+            if type == '1':
                 interval = 0;
-            if subday_type is '1':
+            if subday_type == '1':
                 subday_interval = 0;
-            if start_time is '000000':
+            if start_time == '000000':
                 start_time = '0'
             else:
                 start_time = start_time.lstrip('0')
@@ -535,10 +535,10 @@ def main():
             exclude = dict(type='list', default = []),
 
             # schedule
-            schedule_type            = dict(default = 'daily', choices=schedule_types.keys()),
+            schedule_type            = dict(default = 'daily', choices=list(schedule_types.keys())),
             schedule_interval        = dict(type='int', default = 1),
             schedule_start_time      = dict(default = '000000'),
-            schedule_subday_type     = dict(default = 'specific', choices=schedule_subday_types.keys()),
+            schedule_subday_type     = dict(default = 'specific', choices=list(schedule_subday_types.keys())),
             schedule_subday_interval = dict(type='int', default = 0),
 
             # login properties
@@ -568,15 +568,15 @@ def main():
     state = module.params['state']
     manage = True
     if backup.job_exists():
-        if state is 'absent':
+        if state == 'absent':
             module.fail_json(msg="delete not implemented")
-        elif state is 'enabled':
+        elif state == 'enabled':
             module.fail_json(msg="enable not implemented")
             # backup.job_enabled()
-        elif state is 'disabled':
+        elif state == 'disabled':
             module.fail_json(msg="disable not implemented")
             # backup.job_disabled()
-    elif state is 'present':
+    elif state == 'present':
         backup.job_create()
         changed = True
 

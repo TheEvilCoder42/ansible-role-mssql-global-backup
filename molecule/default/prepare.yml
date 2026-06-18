@@ -1,7 +1,7 @@
 ---
 - name: Prepare
   hosts: all
-  become: yes
+  become: true
   roles:
     - robertdebock.ca_certificates
     - robertdebock.microsoft_repository_keys
@@ -17,7 +17,7 @@
       when:
         - ansible_distribution in [ "Debian", "Ubuntu" ]
       apt:
-        update_cache: yes
+        update_cache: true
         name: apt-transport-https
         state: present
 
