@@ -2,7 +2,7 @@
 mssql_server: "{{ ansible_default_ipv4.address | default(ansible_all_ipv4_addresses[0]) }}"
 mssql_port: 1433
 mssql_admin_user: sa
-mssql_admin_password: "P@ssw0rd!"
+# mssql_admin_password must be provided by the user (no insecure default is shipped)
 
 mssql_home: /var/opt/mssql
 mssql_user: mssql
@@ -20,3 +20,6 @@ mssql_logs_schedule_interval: 1
 mssql_logs_schedule_subday_type: hours
 mssql_logs_schedule_subday_interval: 1
 mssql_logs_schedule_start_time: '000000'
+
+# Extra arguments passed to sqlcmd. mssql-tools18 typically needs '-C' to trust the server certificate.
+# mssql_backup_cli_args: ['-C']

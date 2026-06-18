@@ -2,12 +2,6 @@
 
 # Copyright (c) 2020 David Lundgren
 
-ANSIBLE_METADATA = {
-    'metadata_version': '1.1',
-    'supported_by': 'community',
-    'status': ['preview']
-}
-
 DOCUMENTATION = '''
 ---
 module: mssql_global_backup
@@ -26,7 +20,7 @@ options:
         description:
             - Whether or not the backup job should be absent or present
             - Use I(enabled) to turn the job on if disabled
-            - Use I(disbled) to turn the job off if enabled 
+            - Use I(disabled) to turn the job off if enabled
         type: str
         default: "present"
         choices: [ present, absent, enabled, disabled ]
@@ -47,37 +41,35 @@ options:
         description:
             - Whether or not to store database backups in their own folders
         required: false
+        type: bool
         default: true
     rotate:
         description:
             - Number of backups to keep
             - If I(rotate > 0) then the backup file names will appended with the date
+            - If I(rotate = 0) rotation is disabled and old backups are not pruned
         required: false
-        default: 0 (not enabled)
-    rotate_type:
-        description:
-            - Use I(day) to keep I(rotate) days worth of backups
-            - Use I(count) to keep I(rotate) number of backups
-        required: false
-        type: str
-        default: day
-        choices: [ day, count ]
+        type: int
+        default: 0
     schedule_type:
         description:
-            - Type of schedule to use 
+            - Type of schedule to use
+        type: str
+        required: false
+        default: daily
         choices: [ once, daily, weekly, monthly, onstart, idle ]
     schedule_interval:
         description:
             - Interval of the schedule
             - Ignored when I(schedule_type=once)
         required: false
-        type: str
-        default: "1"
+        type: int
+        default: 1
     schedule_start_time:
         description:
             - Start time of the backup job
             - Use 24 hour time
-            - Use I(HHMMSS) format, include any leading I(0) to padd it out I(003000) for 12:30 am
+            - Use I(HHMMSS) format, include any leading I(0) to pad it out I(003000) for 12:30 am
         required: false
         default: "000000"
     schedule_subday_type:
@@ -93,42 +85,64 @@ options:
             - Ignored when I(schedule_subday_type=specific)
             - Should be longer than 10 when I(schedule_subday_type=seconds)
         required: false
-        type: str
-        default: "0"
+        type: int
+        default: 0
     include:
         description:
             - List of databases to include
-        required:false
-        type: list  
+        required: false
+        type: list
+        elements: str
+        default: []
     exclude:
         description:
             - List of databases to exclude
             - I(master), I(model), I(msdb), I(tempdb) are always excluded, use I(include) to include them
         required: false
         type: list
+        elements: str
+        default: []
     login_server:
         description:
             - The TDS server address or hostname of the instance
+        type: str
         required: false
         default: localhost
     login_port:
         description:
             - The TDS port of the instance
         required: false
+        type: int
         default: 1433
     login_name:
         description:
             - The name of the user to log in to the instance
+        type: str
         required: true
     login_password:
         description:
             - The password of the user to log in to the instance
+        type: str
         required: true
+    cli_path:
+        description:
+            - Full path to the C(sqlcmd) executable
+            - If not set, common locations are auto-detected (mssql-tools18 then mssql-tools), falling back to C(sqlcmd) on PATH
+        required: false
+        type: str
+    cli_args:
+        description:
+            - Additional arguments to pass to C(sqlcmd)
+            - For mssql-tools18 you typically need C(-C) to trust the server certificate
+        required: false
+        type: list
+        elements: str
+        default: []
 notes:
-    - Requires the mssql-tools package on the remote host.
+    - Requires the mssql-tools or mssql-tools18 package on the remote host.
 requirements:
-    - python >= 2.7
-    - mssql-tools
+    - python >= 3
+    - mssql-tools or mssql-tools18
 '''.replace('\t', '  ')
 
 EXAMPLES = '''
@@ -154,11 +168,11 @@ EXAMPLES = '''
       - northwind
     login_name: sa
     login_password: password 
-# Custom schedule (using regular time)
-- mssql_backup:
+# Custom schedule (start the backup at 12:30 am)
+- mssql_global_backup:
     name: all user databases on custom schedule
     schedule_type: daily
-    schedule_time: '12:30 am'
+    schedule_start_time: '003000'
     login_name: sa
     login_password: password
 '''.replace('\t', '  ')
@@ -167,69 +181,60 @@ RETURN = '''
 name:
     description: The name of the backup that was managed
     returned: success
-    type: string
+    type: str
     sample: foo
 state:
-    description: The state of the resource (created, updated, disabled, enabled, removed)
+    description: The requested state of the resource
     returned: success
-    type: string
-    sample: created
+    type: str
+    sample: present
+changed:
+    description: Whether a change was made (or would be made in check mode)
+    returned: success
+    type: bool
+    sample: true
 '''.replace('\t', '  ')
 
 from tempfile import NamedTemporaryFile
 from ansible.module_utils.basic import AnsibleModule
 import subprocess
 import os
+import shutil
 
-def sqlresults(login_server, login_port, login_name, login_password, command):
-    return subprocess.check_output([
-        '/opt/mssql-tools/bin/sqlcmd',
+def resolve_cli_path(cli_path):
+    if cli_path:
+        return cli_path
+    for candidate in ('/opt/mssql-tools18/bin/sqlcmd', '/opt/mssql-tools/bin/sqlcmd'):
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which('sqlcmd')
+
+def _sqlcmd_argv(cli_path, cli_args, login_server, login_port, login_name, tail):
+    return [cli_path] + list(cli_args) + [
         '-S',
         "{0},{1}".format(login_server, login_port),
         '-U',
         login_name,
-        '-P',
-        login_password,
         '-d',
         'msdb',
         '-b',
-        '-s,',
-        '-y0',
-        '-Q',
-        'SET NOCOUNT ON; %s' % command
-    ]).decode()
+    ] + tail
 
-def sqlfile(login_server, login_port, login_name, login_password, command):
-    subprocess.check_call([
-        '/opt/mssql-tools/bin/sqlcmd',
-        '-S',
-        "{0},{1}".format(login_server, login_port),
-        '-d',
-        'msdb',
-        '-U',
-        login_name,
-        '-P',
-        login_password,
-        '-b',
-        '-i',
-        command
-    ])
+def sqlresults(cli_path, cli_args, login_server, login_port, login_name, login_password, command):
+    env = dict(os.environ, SQLCMDPASSWORD=login_password)
+    argv = _sqlcmd_argv(cli_path, cli_args, login_server, login_port, login_name,
+                        ['-s,', '-y0', '-Q', 'SET NOCOUNT ON; %s' % command])
+    return subprocess.check_output(argv, env=env).decode()
 
-def sqlcmd(login_server, login_port, login_name, login_password, command):
-    subprocess.check_call([
-        '/opt/mssql-tools/bin/sqlcmd',
-        '-S',
-        "{0},{1}".format(login_server, login_port),
-        '-d',
-        'msdb',
-        '-U',
-        login_name,
-        '-P',
-        login_password,
-        '-b',
-        '-Q',
-        command
-    ])
+def sqlfile(cli_path, cli_args, login_server, login_port, login_name, login_password, command):
+    env = dict(os.environ, SQLCMDPASSWORD=login_password)
+    argv = _sqlcmd_argv(cli_path, cli_args, login_server, login_port, login_name, ['-i', command])
+    subprocess.check_call(argv, env=env)
+
+def sqlcmd(cli_path, cli_args, login_server, login_port, login_name, login_password, command):
+    env = dict(os.environ, SQLCMDPASSWORD=login_password)
+    argv = _sqlcmd_argv(cli_path, cli_args, login_server, login_port, login_name, ['-Q', command])
+    subprocess.check_call(argv, env=env)
 
 def quoteName(name, quote_char):
     if quote_char == '[' or quote_char == ']':
@@ -242,7 +247,7 @@ def quoteName(name, quote_char):
     return "{0}{1}{2}".format(quote_start_char, name.replace(quote_end_char, quote_end_char + quote_end_char), quote_end_char)
 
 class BackupJob:
-    def __init__(self, server, port, user, password, name, include, exclude, per_database, rotate):
+    def __init__(self, server, port, user, password, name, include, exclude, per_database, rotate, cli_path, cli_args):
         self.server = server
         self.port = port
         self.user = user
@@ -252,19 +257,25 @@ class BackupJob:
         self.exclude = exclude
         self.per_database = per_database
         self.rotate = rotate
+        self.cli_path = cli_path
+        self.cli_args = cli_args
+
+        self.step_results = None
+        self.schedule_results = None
+        self.attach_results = None
 
         self.job_name = name
         self.schedule_name = 'ansible %s schedule' % self.name.lower()
         self.backup_step_name = 'ansible %s step' % self.name.lower()
 
     def result_filter(self, sql):
-        data = [i.strip() for i in sqlresults(self.server, self.port, self.user, self.password, sql).split("\n") if i]
+        data = [i.strip() for i in sqlresults(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password, sql).split("\n") if i]
 
         return data
 
     def job_exists(self):
-        sql = "SELECT name FROM dbo.sysjobs WHERE name=N'%s'" % self.job_name
-        return self.job_name in sqlresults(self.server, self.port, self.user, self.password, sql).split("\n")
+        sql = "SELECT name FROM dbo.sysjobs WHERE name=%s" % quoteName(self.job_name, "'")
+        return self.job_name in sqlresults(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password, sql).split("\n")
 
     def job_create(self):
         sql = """
@@ -276,7 +287,7 @@ class BackupJob:
         """.format(
             quoteName(self.job_name, "'")
         )
-        sqlcmd(self.server, self.port, self.user, self.password, sql)
+        sqlcmd(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password, sql)
 
     def backup_step_sql(self, type, path):
         # excludes: name NOT IN (excludes)
@@ -292,9 +303,10 @@ class BackupJob:
         if len(databases) == 0:
             raise Exception("missing databases: %s" % (','.join(databases)))
 
-        file_path = "'%s'" % path
+        safe_path = path.replace("'", "''")
+        file_path = "'%s'" % safe_path
         if self.per_database:
-            file_path = "'%s/' + @name" % path
+            file_path = "'%s/' + @name" % safe_path
 
         file_name = "@name"
         if self.rotate > 0:
@@ -304,39 +316,47 @@ class BackupJob:
             'full': {'ext': 'bak', 'type': 'DATABASE'},
             'logs': {'ext': 'trn', 'type': 'LOG'}
         }
+        ext = backup_type[type]['ext']
+
+        # rotation by days: only prune when rotate > 0, otherwise rotation is disabled
+        delete_decl = ''
+        delete_exec = ''
+        if self.rotate > 0:
+            delete_decl = "DECLARE @deleteDate DATETIME = DATEADD(day, -%d, GETDATE());\r\n" % self.rotate
+            delete_exec = (
+                "EXEC master.sys.xp_delete_file 0, '%s', '%s', @deleteDate, 1;\r\n"
+                "EXEC msdb.dbo.sp_delete_backuphistory @oldest_date = @deleteDate;\r\n"
+            ) % (safe_path, ext)
 
         # the \r makes it nicely formatted in the database
         return """
 DECLARE @name VARCHAR(50);\r
 DECLARE @fileName VARCHAR(256);\r
 DECLARE @fileDate VARCHAR(20);\r
-DECLARE @deleteDate DATETIME = DATEADD(day, -{0}, GETDATE());\r
-SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
+{delete_decl}SET @fileDate = (Select Replace(Convert(nvarchar, GetDate(), 111), '/', '') + '_' + Replace(Convert(nvarchar, GetDate(), 108), ':', ''));\r
 DECLARE db_cursor CURSOR READ_ONLY FOR\r
-    SELECT name FROM master.sys.databases WHERE {2}\r
+    SELECT name FROM master.sys.databases WHERE {where}\r
     AND state = 0 -- database is online\r
     AND is_in_standby = 0 -- database is not read only for log shipping;\r
 OPEN db_cursor;\r
 FETCH NEXT FROM db_cursor INTO @name;\r
 WHILE @@FETCH_STATUS = 0\r
 BEGIN\r
-    SET @fileName = {3} + '/' + {4} + '.{5}';\r
-    BACKUP {6} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
+    SET @fileName = {file_path} + '/' + {file_name} + '.{ext}';\r
+    BACKUP {btype} @name TO DISK=@fileName WITH COMPRESSION, NOFORMAT, NOINIT, SKIP, NOREWIND, NOUNLOAD, STATS=10;\r
     FETCH NEXT FROM db_cursor INTO @name;\r
 END\r
-EXEC master.sys.xp_delete_file 0, '{1}', '{5}', @deleteDate, 1;\r
-EXEC msdb.dbo.sp_delete_backuphistory @oldest_date = @deleteDate;\r
-CLOSE db_cursor;\r
+{delete_exec}CLOSE db_cursor;\r
 DEALLOCATE db_cursor;\r
 GO
         """.format(
-            self.rotate,
-            path,
-            where % (','.join(databases)),
-            file_path,
-            file_name,
-            backup_type[type]['ext'],
-            backup_type[type]['type']
+            delete_decl=delete_decl,
+            where=where % (','.join(databases)),
+            file_path=file_path,
+            file_name=file_name,
+            ext=ext,
+            btype=backup_type[type]['type'],
+            delete_exec=delete_exec
         )
 
     def backup_step_exists(self, type, path):
@@ -394,27 +414,28 @@ GO
         with open(path.name, 'w+') as file:
             file.write(sql)
 
-        sqlfile(self.server, self.port, self.user, self.password, path.name)
+        sqlfile(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password, path.name)
         os.unlink(path.name)
 
 
     def schedule_exists(self, type, interval, subday_type, subday_interval, start_time):
-        sql = "SELECT enabled,freq_type,freq_interval,freq_subday_type,freq_subday_interval,active_start_time FROM dbo.sysschedules WHERE name='%s'" % self.schedule_name
+        sql = "SELECT enabled,freq_type,freq_interval,freq_subday_type,freq_subday_interval,active_start_time FROM dbo.sysschedules WHERE name=%s" % quoteName(self.schedule_name, "'")
         results = self.result_filter(sql)
-        if len(results) > 0:
-            if type == '1':
-                interval = 0;
-            if subday_type == '1':
-                subday_interval = 0;
-            if start_time == '000000':
-                start_time = '0'
-            else:
-                start_time = start_time.lstrip('0')
 
-            self.schedule_results = results
+        # normalise the requested values the same way SQL Server stores them
+        if type == '1':
+            interval = 0
+        if subday_type == '1':
+            subday_interval = 0
+        if start_time == '000000':
+            start_time = '0'
+        else:
+            start_time = start_time.lstrip('0')
 
-            return ','.join(['1',type,'%d'%interval,subday_type,'%d'%subday_interval,start_time]) in results
-        return False
+        self.schedule_results = results
+        self.schedule_desired = ','.join(['1', type, '%d' % interval, subday_type, '%d' % subday_interval, start_time])
+
+        return self.schedule_desired in results
 
     def schedule_manage(self, type, interval, subday_type, subday_interval, start_time):
         sql = """
@@ -451,7 +472,7 @@ GO
             subday_interval,
             start_time
         )
-        sqlcmd(self.server, self.port, self.user, self.password, sql)
+        sqlcmd(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password, sql)
 
         return self.schedule_exists(type, interval, subday_type, subday_interval, start_time)
 
@@ -471,7 +492,7 @@ GO
         return len(self.attach_results) > 0
 
     def schedule_attach(self):
-        sqlcmd(self.server, self.port, self.user, self.password,"""
+        sqlcmd(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password,"""
             EXEC sp_attach_schedule @job_name = {0}, @schedule_name = {1};
         """.format(
             quoteName(self.job_name, "'"),
@@ -492,7 +513,7 @@ GO
         return len(self.attach_results) > 0
 
     def jobserver_add(self):
-        sqlcmd(self.server, self.port, self.user, self.password,"""
+        sqlcmd(self.cli_path, self.cli_args, self.server, self.port, self.user, self.password,"""
             EXEC sp_add_jobserver @job_name = {0}, @server_name=N'(LOCAL)';
         """.format(
             quoteName(self.job_name, "'")
@@ -526,13 +547,8 @@ def main():
             type = dict(default = 'full', choices=['full','logs']),
 
             # rotation options
-            rotate = dict(type='int', default = 0),
-            rotate_type = dict(default = 'day', choices=['day','count']),
             per_database = dict(type='bool', default = True),
-
-            # primary configuration options
-            include = dict(type='list', default = []),
-            exclude = dict(type='list', default = []),
+            rotate = dict(type='int', default = 0),
 
             # schedule
             schedule_type            = dict(default = 'daily', choices=list(schedule_types.keys())),
@@ -541,16 +557,29 @@ def main():
             schedule_subday_type     = dict(default = 'specific', choices=list(schedule_subday_types.keys())),
             schedule_subday_interval = dict(type='int', default = 0),
 
+            # database selection
+            include = dict(type='list', elements='str', default = []),
+            exclude = dict(type='list', elements='str', default = []),
+
             # login properties
             login_server   = dict(required = False, default = 'localhost'),
             login_port     = dict(type='int', required = False, default = 1433),
             login_name     = dict(required = True),
-            login_password = dict(required = True, no_log = True)
+            login_password = dict(required = True, no_log = True),
+
+            # cli options
+            cli_path       = dict(type='str', required = False, default = None),
+            cli_args       = dict(type='list', elements='str', required = False, default = [])
         ),
         required_if=[
             ['state', 'present', ['path']]
-        ]
+        ],
+        supports_check_mode=True
     )
+
+    cli_path = resolve_cli_path(module.params['cli_path'])
+    if not cli_path:
+        module.fail_json(msg="sqlcmd executable not found; set 'cli_path' or install mssql-tools/mssql-tools18")
 
     backup = BackupJob(
         module.params['login_server'],
@@ -561,10 +590,15 @@ def main():
         module.params['include'],
         set(['master', 'model', 'msdb', 'tempdb']) | set(module.params['exclude']),
         module.params['per_database'],
-        module.params['rotate']
+        module.params['rotate'],
+        cli_path,
+        module.params['cli_args']
     )
 
+    check_mode = module.check_mode
+
     changed = False
+    diff = []
     state = module.params['state']
     manage = True
     if backup.job_exists():
@@ -577,18 +611,30 @@ def main():
             module.fail_json(msg="disable not implemented")
             # backup.job_disabled()
     elif state == 'present':
-        backup.job_create()
         changed = True
+        diff.append({
+            'before_header': 'job: %s (absent)' % backup.job_name,
+            'after_header': 'job: %s' % backup.job_name,
+            'before': '',
+            'after': "EXEC sp_add_job @job_name=N'%s';\n" % backup.job_name,
+        })
+        if not check_mode:
+            backup.job_create()
 
     if manage is True:
         # manage the job step for backup
         type = module.params['type']
         path = module.params['path']
         if not backup.backup_step_exists(type, path):
-            if backup.backup_step_manage(type, path):
-                changed = True
-            # else:
-            #     module.fail_json(msg="Unable to update backup step")
+            changed = True
+            diff.append({
+                'before_header': 'job step: %s' % backup.backup_step_name,
+                'after_header': 'job step: %s' % backup.backup_step_name,
+                'before': (backup.step_results or '') + '\n',
+                'after': backup.backup_step_sql(type, path) + '\n',
+            })
+            if not check_mode:
+                backup.backup_step_manage(type, path)
 
         # manage the schedule
         schedule_type = module.params['schedule_type']
@@ -597,28 +643,44 @@ def main():
         schedule_subday_type = module.params['schedule_subday_type']
         schedule_subday_interval = module.params['schedule_subday_interval']
         if not backup.schedule_exists(schedule_types[schedule_type], schedule_interval, schedule_subday_types[schedule_subday_type], schedule_subday_interval, schedule_start_time):
-            if backup.schedule_manage(schedule_types[schedule_type], schedule_interval, schedule_subday_types[schedule_subday_type], schedule_subday_interval, schedule_start_time):
-                changed = True
-            # else:
-            #     module.fail_json(msg="Unable to update schedule")
+            changed = True
+            diff.append({
+                'before_header': 'schedule: %s' % backup.schedule_name,
+                'after_header': 'schedule: %s' % backup.schedule_name,
+                'before': '\n'.join(backup.schedule_results or []) + '\n',
+                'after': backup.schedule_desired + '\n',
+            })
+            if not check_mode:
+                backup.schedule_manage(schedule_types[schedule_type], schedule_interval, schedule_subday_types[schedule_subday_type], schedule_subday_interval, schedule_start_time)
 
         if not backup.schedule_attached():
-            if backup.schedule_attach():
-                changed = True
-            # else:
-            #     module.fail_json(msg="Unable to attach schedule")
-        
+            changed = True
+            diff.append({
+                'before_header': 'schedule attachment: %s' % backup.schedule_name,
+                'after_header': 'schedule attachment: %s' % backup.schedule_name,
+                'before': '',
+                'after': "EXEC sp_attach_schedule @job_name=N'%s', @schedule_name=N'%s';\n" % (backup.job_name, backup.schedule_name),
+            })
+            if not check_mode:
+                backup.schedule_attach()
+
         # manage the jobserver
         if not backup.jobserver_added():
-            if backup.jobserver_add():
-                changed = True
-            # else:
-            #     module.fail_json(msg="Unable to attach schedule")
+            changed = True
+            diff.append({
+                'before_header': 'jobserver: %s' % backup.job_name,
+                'after_header': 'jobserver: %s' % backup.job_name,
+                'before': '',
+                'after': "EXEC sp_add_jobserver @job_name=N'%s', @server_name=N'(LOCAL)';\n" % backup.job_name,
+            })
+            if not check_mode:
+                backup.jobserver_add()
 
     results = {
         'changed': changed,
         'name' : module.params['name'],
         'state': state,
+        'diff': diff,
         'results': [
             backup.step_results,
             backup.schedule_results,

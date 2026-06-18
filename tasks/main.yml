@@ -10,7 +10,10 @@
   mssql_global_backup:
     name: "{{ mssql_backup_name | default('Backup Databases') }}"
     path: "{{ mssql_backup_path }}"
-    rotate: "{{ mssql_backup_count | default(omit) }}"
+    rotate: "{{ mssql_backup_count }}"
+    per_database: "{{ mssql_backup_per_database | default(omit) }}"
+    include: "{{ mssql_backup_include | default(omit) }}"
+    exclude: "{{ mssql_backup_exclude | default(omit) }}"
     schedule_type: "{{ mssql_schedule_type | default(omit) }}"
     schedule_interval: "{{ mssql_schedule_interval | default(omit) }}"
     schedule_subday_type: "{{ mssql_schedule_subday_type | default(omit) }}"
@@ -20,13 +23,18 @@
     login_port: "{{ mssql_port | string }}"
     login_name: "{{ mssql_admin_user }}"
     login_password: "{{ mssql_admin_password }}"
+    cli_path: "{{ mssql_backup_cli_path | default(omit) }}"
+    cli_args: "{{ mssql_backup_cli_args | default(omit) }}"
 
 - name: SETUP | Backup database logs job
   mssql_global_backup:
     name: "{{ mssql_backup_logs_name | default('Backup Databases Logs') }}"
     path: "{{ mssql_backup_path }}"
     type: logs
-    rotate: "{{ mssql_backup_count | default(omit) }}"
+    rotate: "{{ mssql_backup_count }}"
+    per_database: "{{ mssql_backup_per_database | default(omit) }}"
+    include: "{{ mssql_backup_include | default(omit) }}"
+    exclude: "{{ mssql_backup_exclude | default(omit) }}"
     schedule_type: "{{ mssql_logs_schedule_type | default(omit) }}"
     schedule_interval: "{{ mssql_logs_schedule_interval | default(omit) }}"
     schedule_subday_type: "{{ mssql_logs_schedule_subday_type | default(omit) }}"
@@ -36,3 +44,5 @@
     login_port: "{{ mssql_port | string }}"
     login_name: "{{ mssql_admin_user }}"
     login_password: "{{ mssql_admin_password }}"
+    cli_path: "{{ mssql_backup_cli_path | default(omit) }}"
+    cli_args: "{{ mssql_backup_cli_args | default(omit) }}"

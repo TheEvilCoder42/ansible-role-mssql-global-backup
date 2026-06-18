@@ -4,7 +4,7 @@ An Ansible Role that helps manage Microsoft SQL Server Backup jobs
 
 ## Dependencies
 
-A Microsoft SQL Server on Linux installation.
+A Microsoft SQL Server on Linux installation, with the `mssql-tools` or `mssql-tools18` package available on the host (provides `sqlcmd`).
 
 ## NOTES
 
@@ -14,20 +14,20 @@ As of SQL Server 2019 on Linux, it is not currently possible to use `xp_cmdshell
 
 Available variables are listed below, along with default values (see `defaults/main.yml`):
 
+    mssql_server: "{{ ansible_default_ipv4.address }}"
     mssql_port: 1433
-    
-The port to use when connecting to the mssql server
+
+The address and port to use when connecting to the mssql server
 
     mssql_admin_user: sa
-    mssql_admin_password: "P@sswOrd!"
 
-The administrative credentials of the mssql server
+The administrative user of the mssql server. `mssql_admin_password` must be provided by you (for example via Ansible Vault) — no insecure default is shipped.
 
     mssql_home: /var/opt/mssql
     mssql_user: mssql
     mssql_group: mssql
 
-The mssql user definition. The backup rotation script will be placed here
+The mssql user definition, used for ownership of the backup directory.
 
     mssql_backup_path: /var/opt/mssql/backups
 
@@ -35,7 +35,7 @@ The path to where the backups should be stored
 
     mssql_backup_count: 14
 
-How many backups to keep. The backup rotation script will sort by newest first, then remove any additional backups. Depending on how you have the schedule set, this could be 14 days worth of backups, or 14 weeks.
+How many days of backups to keep. The SQL Agent job prunes backup files older than this many days. Set to `0` to disable pruning and keep all backups.
 
     mssql_schedule_type: daily
     mssql_schedule_interval: 1
@@ -45,13 +45,17 @@ What time to run the schedule at, default is set to 12:30 am
 
 Available Schedule types: `once`, `daily`, `weekly`, `monthly`, `onstart`, `idle`
 
-    mssql_backup_cron_minute: 0
-    mssql_backup_cron_hour: 2
-    mssql_backup_cron_day: *
-    mssql_backup_cron_month: *
-    mssql_backup_cron_weekday: *
+    mssql_logs_schedule_type: daily
+    mssql_logs_schedule_interval: 1
+    mssql_logs_schedule_subday_type: hours
+    mssql_logs_schedule_subday_interval: 1
+    mssql_logs_schedule_start_time: '000000'
 
-When should the cron job run to handle backup rotation. This is set for 2:00 am   
+Schedule for the transaction-log backup job (defaults to hourly).
+
+    # mssql_backup_cli_args: ['-C']
+
+Extra arguments passed to `sqlcmd`. When using mssql-tools18 you typically need `-C` to trust the server certificate.
 
 ## Testing
 
